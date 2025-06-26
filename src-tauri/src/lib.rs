@@ -44,7 +44,7 @@ async fn find_ncm_files(folder_path: String) -> Result<Vec<String>, String> {
     
     let file_paths: Vec<String> = ncm_files
         .iter()
-        .map(|p| p.to_string_lossy().to_string())
+        .filter_map(|p| p.to_str().map(|s| s.to_string()))
         .collect();
     
     Ok(file_paths)
@@ -95,8 +95,8 @@ async fn convert_ncm_folder(folder_path: String, window: tauri::Window) -> Resul
             total,
             processed: index,
             current_file: file_path.file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
+                .and_then(|name| name.to_str())
+                .unwrap_or("unknown")
                 .to_string(),
             status: "正在转换".to_string(),
         };

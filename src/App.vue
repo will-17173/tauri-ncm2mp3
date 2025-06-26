@@ -177,7 +177,8 @@ async function convertFiles(filePaths) {
         const isDirectory = await invoke("is_directory", { path: filePath });
         
         if (isDirectory) {
-          addLog(`正在扫描文件夹: ${filePath.split('/').pop()}`);
+          const folderName = filePath.split(/[/\\]/).pop();
+          addLog(`正在扫描文件夹: ${folderName}`);
           // 如果是文件夹，递归查找NCM文件
           const ncmFiles = await invoke("find_ncm_files", { folderPath: filePath });
           allNcmFiles.push(...ncmFiles);
@@ -187,7 +188,8 @@ async function convertFiles(filePaths) {
           if (filePath.toLowerCase().endsWith('.ncm')) {
             allNcmFiles.push(filePath);
           } else {
-            addLog(`跳过非NCM文件: ${filePath.split('/').pop()}`, 'error');
+            const fileName = filePath.split(/[/\\]/).pop();
+            addLog(`跳过非NCM文件: ${fileName}`, 'error');
           }
         }
       } catch (error) {
@@ -204,7 +206,8 @@ async function convertFiles(filePaths) {
     
     // 转换所有找到的NCM文件
     for (let filePath of allNcmFiles) {
-      addLog(`正在转换: ${filePath.split('/').pop()}`);
+      const fileName = filePath.split(/[/\\]/).pop();
+      addLog(`正在转换: ${fileName}`);
       const result = await invoke("convert_ncm_file", { filePath });
       results.value.push(result);
       
