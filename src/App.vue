@@ -55,6 +55,7 @@ onMounted(async () => {
       try {
         await window.listen(eventName, (event) => {
           console.log(`拖拽事件 ${eventName}:`, event);
+          console.log(`事件载荷详情:`, JSON.stringify(event.payload, null, 2));
           let files = [];
           
           if (event.payload) {
@@ -66,6 +67,14 @@ onMounted(async () => {
               files = event.payload.files;
             }
           }
+          
+          // 详细调试每个文件路径
+          files.forEach((file, index) => {
+            console.log(`文件 ${index}:`, file);
+            console.log(`文件 ${index} 类型:`, typeof file);
+            console.log(`文件 ${index} 长度:`, file.length);
+            console.log(`文件 ${index} 字符码:`, [...file].map(c => c.charCodeAt(0)));
+          });
           
           if (files.length > 0) {
             addLog(`收到拖拽文件: ${files.length} 个`);
@@ -120,13 +129,49 @@ onUnmounted(() => {
   }
 });
 
+// 尝试修复编码错误的路径
+function fixPathEncoding(path) {
+  try {
+    // 检查是否包含乱码字符
+    if (typeof path !== 'string' || path.includes('�') || /[\u{FFFD}\u{FFF0}-\u{FFFF}]/u.test(path)) {
+      console.warn('检测到路径编码问题:', path);
+      return null; // 返回null表示路径无法修复
+    }
+    
+    // 尝试处理可能的UTF-8解码错误
+    // 如果路径看起来像是错误编码的结果，尝试修复
+    try {
+      // 检查是否是因为编码问题导致的奇怪字符
+      const bytes = new TextEncoder().encode(path);
+      const decoded = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+      if (decoded !== path && !decoded.includes('�')) {
+        console.log('尝试修复路径编码:', path, '->', decoded);
+        return decoded;
+      }
+    } catch (e) {
+      console.warn('路径编码修复失败:', e);
+    }
+    
+    return path;
+  } catch (error) {
+    console.error('路径编码处理出错:', error);
+    return null;
+  }
+}
+
 // 安全的路径显示函数，避免乱码
 function safePathDisplay(path) {
   try {
+    // 首先尝试修复编码
+    const fixedPath = fixPathEncoding(path);
+    if (!fixedPath) {
+      return '[文件名编码错误]';
+    }
+    
     // 尝试解码可能的乱码路径
-    const fileName = path.split(/[/\\]/).pop();
+    const fileName = fixedPath.split(/[/\\]/).pop();
     // 如果文件名包含特殊字符，尝试简化显示
-    if (fileName && fileName.includes('�')) {
+    if (fileName && (fileName.includes('�') || /[\u{FFFD}\u{FFF0}-\u{FFFF}]/u.test(fileName))) {
       return '[文件名包含特殊字符]';
     }
     return fileName || '[未知文件名]';
@@ -182,20 +227,40 @@ async function convertFiles(filePaths) {
   results.value = [];
   addLog(`收到拖拽文件: ${filePaths.length} 个`);
   
-  // 检测可能的编码问题
-  const hasEncodingIssues = filePaths.some(path => 
-    path.includes('�') || /[^\x00-\x7F]/.test(path)
-  );
+  // 过滤和修复文件路径
+  const validPaths = [];
+  const invalidPaths = [];
   
-  if (hasEncodingIssues) {
-    addLog('检测到文件路径可能包含特殊字符，将尝试智能处理', 'info');
+  filePaths.forEach(path => {
+    console.log('处理路径:', path, '类型:', typeof path);
+    const fixedPath = fixPathEncoding(path);
+    if (fixedPath) {
+      validPaths.push(fixedPath);
+    } else {
+      invalidPaths.push(path);
+      addLog(`跳过编码错误的文件: ${safePathDisplay(path)}`, 'error');
+    }
+  });
+  
+  if (invalidPaths.length > 0) {
+    addLog(`检测到 ${invalidPaths.length} 个文件路径存在编码问题，已跳过`, 'error');
+    addLog('提示：如果文件名包含特殊字符，请尝试重命名文件后再拖拽', 'info');
   }
+  
+  if (validPaths.length === 0) {
+    addLog('没有有效的文件路径可以处理', 'error');
+    addLog('建议：请确保文件名不包含特殊字符，或尝试使用"选择文件"按钮', 'info');
+    isConverting.value = false;
+    return;
+  }
+  
+  addLog(`将处理 ${validPaths.length} 个有效文件路径`);
   
   try {
     // 先检查哪些是文件，哪些是文件夹
     const allNcmFiles = [];
     
-    for (let filePath of filePaths) {
+    for (let filePath of validPaths) {
       try {
         // 检查路径类型
         const isDirectory = await invoke("is_directory", { path: filePath });
