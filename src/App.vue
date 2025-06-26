@@ -120,6 +120,21 @@ onUnmounted(() => {
   }
 });
 
+// 安全的路径显示函数，避免乱码
+function safePathDisplay(path) {
+  try {
+    // 尝试解码可能的乱码路径
+    const fileName = path.split(/[/\\]/).pop();
+    // 如果文件名包含特殊字符，尝试简化显示
+    if (fileName && fileName.includes('�')) {
+      return '[文件名包含特殊字符]';
+    }
+    return fileName || '[未知文件名]';
+  } catch (error) {
+    return '[文件名解析失败]';
+  }
+}
+
 function addLog(message, type = 'info') {
   logs.value.push({
     id: Date.now(),
@@ -167,6 +182,15 @@ async function convertFiles(filePaths) {
   results.value = [];
   addLog(`收到拖拽文件: ${filePaths.length} 个`);
   
+  // 检测可能的编码问题
+  const hasEncodingIssues = filePaths.some(path => 
+    path.includes('�') || /[^\x00-\x7F]/.test(path)
+  );
+  
+  if (hasEncodingIssues) {
+    addLog('检测到文件路径可能包含特殊字符，将尝试智能处理', 'info');
+  }
+  
   try {
     // 先检查哪些是文件，哪些是文件夹
     const allNcmFiles = [];
@@ -177,7 +201,7 @@ async function convertFiles(filePaths) {
         const isDirectory = await invoke("is_directory", { path: filePath });
         
         if (isDirectory) {
-          const folderName = filePath.split(/[/\\]/).pop();
+          const folderName = safePathDisplay(filePath);
           addLog(`正在扫描文件夹: ${folderName}`);
           // 如果是文件夹，递归查找NCM文件
           const ncmFiles = await invoke("find_ncm_files", { folderPath: filePath });
@@ -188,12 +212,12 @@ async function convertFiles(filePaths) {
           if (filePath.toLowerCase().endsWith('.ncm')) {
             allNcmFiles.push(filePath);
           } else {
-            const fileName = filePath.split(/[/\\]/).pop();
+            const fileName = safePathDisplay(filePath);
             addLog(`跳过非NCM文件: ${fileName}`, 'error');
           }
         }
       } catch (error) {
-        addLog(`处理路径失败 ${filePath}: ${error}`, 'error');
+        addLog(`处理路径失败 ${safePathDisplay(filePath)}: ${error}`, 'error');
       }
     }
     
@@ -206,7 +230,7 @@ async function convertFiles(filePaths) {
     
     // 转换所有找到的NCM文件
     for (let filePath of allNcmFiles) {
-      const fileName = filePath.split(/[/\\]/).pop();
+      const fileName = safePathDisplay(filePath);
       addLog(`正在转换: ${fileName}`);
       const result = await invoke("convert_ncm_file", { filePath });
       results.value.push(result);

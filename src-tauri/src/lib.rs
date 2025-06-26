@@ -6,6 +6,47 @@ use tauri::Emitter;
 use aes::Aes128;
 use aes::cipher::{BlockDecrypt, KeyInit, generic_array::GenericArray};
 
+// Windows编码处理函数
+fn safe_path_to_string(path: &Path) -> String {
+    #[cfg(windows)]
+    {
+        // Windows平台特殊处理
+        use std::os::windows::ffi::OsStrExt;
+        if let Some(os_str) = path.as_os_str().to_str() {
+            os_str.to_string()
+        } else {
+            // 如果无法直接转换，使用UTF-16处理
+            let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+            String::from_utf16_lossy(&wide)
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        path.to_string_lossy().to_string()
+    }
+}
+
+fn safe_filename_to_string(path: &Path) -> String {
+    if let Some(filename) = path.file_name() {
+        #[cfg(windows)]
+        {
+            use std::os::windows::ffi::OsStrExt;
+            if let Some(s) = filename.to_str() {
+                s.to_string()
+            } else {
+                let wide: Vec<u16> = filename.encode_wide().collect();
+                String::from_utf16_lossy(&wide)
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            filename.to_string_lossy().to_string()
+        }
+    } else {
+        "unknown".to_string()
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ConversionResult {
     pub success: bool,
@@ -44,7 +85,7 @@ async fn find_ncm_files(folder_path: String) -> Result<Vec<String>, String> {
     
     let file_paths: Vec<String> = ncm_files
         .iter()
-        .map(|p| p.to_string_lossy().to_string())
+        .map(|p| safe_path_to_string(p))
         .collect();
     
     Ok(file_paths)
@@ -94,15 +135,13 @@ async fn convert_ncm_folder(folder_path: String, window: tauri::Window) -> Resul
         let progress = ConversionProgress {
             total,
             processed: index,
-            current_file: file_path.file_name()
-                .map(|name| name.to_string_lossy().to_string())
-                .unwrap_or_else(|| "unknown".to_string()),
+            current_file: safe_filename_to_string(file_path),
             status: "正在转换".to_string(),
         };
         
         let _ = window.emit("conversion-progress", &progress);
         
-        let result = match convert_single_ncm(&file_path.to_string_lossy()).await {
+        let result = match convert_single_ncm(&safe_path_to_string(file_path)).await {
             Ok(output_path) => ConversionResult {
                 success: true,
                 message: "转换成功".to_string(),
@@ -281,7 +320,7 @@ async fn convert_single_ncm(file_path: &str) -> Result<String> {
     let output_path = path.with_extension("mp3");
     fs::write(&output_path, &decrypted_audio)?;
     
-    Ok(output_path.to_string_lossy().to_string())
+    Ok(safe_path_to_string(&output_path))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
