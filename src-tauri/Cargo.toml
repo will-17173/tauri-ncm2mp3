@@ -1,6 +1,6 @@
 [package]
 name = "ncm2mp3"
-version = "1.0.0"
+version = "1.0.1"
 description = "A Tauri application to convert NCM files to MP3 format"
 authors = ["you"]
 edition = "2021"
