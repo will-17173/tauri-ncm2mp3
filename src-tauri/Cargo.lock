@@ -2105,7 +2105,7 @@ dependencies = [
 
 [[package]]
 name = "ncm2mp3"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "aes",
  "anyhow",
