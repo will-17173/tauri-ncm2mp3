@@ -7,6 +7,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 const isDragOver = ref(false);
 const isConverting = ref(false);
+const isMacOS = ref(false);
 const progress = ref({
   total: 0,
   processed: 0,
@@ -20,11 +21,16 @@ let unlistenProgress = null;
 let unlistenFileDrop = null;
 
 onMounted(async () => {
+  // 检测操作系统
+  isMacOS.value = navigator.platform.toLowerCase().includes('mac');
+  
   unlistenProgress = await listen("conversion-progress", (event) => {
     progress.value = event.payload;
   });
   
-  try {
+  // 只在macOS上启用拖拽功能
+  if (isMacOS.value) {
+    try {
     // Tauri 2.0 文件拖拽事件监听
     const window = getCurrentWindow();
     
@@ -55,7 +61,6 @@ onMounted(async () => {
       try {
         await window.listen(eventName, (event) => {
           console.log(`拖拽事件 ${eventName}:`, event);
-          console.log(`事件载荷详情:`, JSON.stringify(event.payload, null, 2));
           let files = [];
           
           if (event.payload) {
@@ -67,14 +72,6 @@ onMounted(async () => {
               files = event.payload.files;
             }
           }
-          
-          // 详细调试每个文件路径
-          files.forEach((file, index) => {
-            console.log(`文件 ${index}:`, file);
-            console.log(`文件 ${index} 类型:`, typeof file);
-            console.log(`文件 ${index} 长度:`, file.length);
-            console.log(`文件 ${index} 字符码:`, [...file].map(c => c.charCodeAt(0)));
-          });
           
           if (files.length > 0) {
             addLog(`收到拖拽文件: ${files.length} 个`);
@@ -114,9 +111,12 @@ onMounted(async () => {
     
     // addLog("拖拽功能初始化完成", 'info'); 
     
-  } catch (error) {
-    console.error("设置拖拽监听失败:", error);
-    addLog(`拖拽功能初始化失败: ${error}`, 'error');
+    } catch (error) {
+      console.error("设置拖拽监听失败:", error);
+      addLog(`拖拽功能初始化失败: ${error}`, 'error');
+    }
+  } else {
+    console.log("Windows系统检测到，拖拽功能已禁用");
   }
 });
 
@@ -129,47 +129,13 @@ onUnmounted(() => {
   }
 });
 
-// 严格的路径验证函数 - 只允许安全的ASCII路径
-function isValidPath(path) {
-  try {
-    if (typeof path !== 'string' || path.length === 0) {
-      return false;
-    }
-    
-    // 检查是否包含乱码字符或替换字符
-    if (path.includes('�') || /[\u{FFFD}\u{FFF0}-\u{FFFF}]/u.test(path)) {
-      console.warn('路径包含乱码字符:', path);
-      return false;
-    }
-    
-    // 检查是否包含明显的编码错误产生的字符
-    const invalidChars = ['☒', '☐', '맊', '망', '○', '瘟', '擦', '霆', '潞', '掘', '昁', '悝', '椆', '恊', '印', '獰', '激', '城', '呂', '鳥'];
-    for (const char of invalidChars) {
-      if (path.includes(char)) {
-        console.warn('路径包含无效字符:', char, 'in', path);
-        return false;
-      }
-    }
-    
-    // 检查是否包含过多的非ASCII字符（可能是编码错误）
-    const nonAsciiCount = (path.match(/[^\x00-\x7F]/g) || []).length;
-    const totalLength = path.length;
-    if (nonAsciiCount > totalLength * 0.3) { // 如果超过30%是非ASCII字符，可能有问题
-      console.warn('路径包含过多非ASCII字符，可能存在编码问题:', path);
-      return false;
-    }
-    
-    return true;
-  } catch (error) {
-    console.error('路径验证出错:', error);
-    return false;
-  }
-}
-
-// 安全的路径显示函数，避免乱码
 function safePathDisplay(path) {
-  // 直接返回友好提示，不尝试显示可能损坏的路径
-  return '[文件路径编码异常]';
+  try {
+    const fileName = path.split(/[/\\]/).pop();
+    return fileName || '[未知文件名]';
+  } catch (error) {
+    return '[文件名解析失败]';
+  }
 }
 
 function addLog(message, type = 'info') {
@@ -217,50 +183,20 @@ async function selectFolder() {
 async function convertFiles(filePaths) {
   isConverting.value = true;
   results.value = [];
-  addLog(`收到拖拽文件: ${filePaths.length} 个`);
-  
-  // 过滤和修复文件路径
-  const validPaths = [];
-  const invalidPaths = [];
-  
-  filePaths.forEach(path => {
-    console.log('处理路径:', path, '类型:', typeof path);
-    if (isValidPath(path)) {
-      validPaths.push(path);
-    } else {
-      invalidPaths.push(path);
-      addLog(`跳过路径编码异常的文件`, 'error');
-    }
-  });
-  
-  if (invalidPaths.length > 0) {
-    addLog(`检测到 ${invalidPaths.length} 个文件存在路径编码问题，已跳过`, 'error');
-    addLog('⚠️ Windows拖拽编码问题解决方案：', 'info');
-    addLog('1. 将文件移动到英文路径下（如 C:\\temp\\）', 'info');
-    addLog('2. 重命名文件为英文名称', 'info');
-    addLog('3. 或者使用下方"选择文件"按钮', 'info');
-  }
-  
-  if (validPaths.length === 0) {
-    addLog('❌ 所有拖拽的文件都存在路径编码问题', 'error');
-    addLog('🔧 建议使用"选择文件"或"选择文件夹"按钮，这些功能不受编码问题影响', 'info');
-    isConverting.value = false;
-    return;
-  }
-  
-  addLog(`将处理 ${validPaths.length} 个有效文件路径`);
+  addLog(`收到文件: ${filePaths.length} 个`);
   
   try {
     // 先检查哪些是文件，哪些是文件夹
     const allNcmFiles = [];
     
-    for (let filePath of validPaths) {
+    for (let filePath of filePaths) {
       try {
         // 检查路径类型
         const isDirectory = await invoke("is_directory", { path: filePath });
         
         if (isDirectory) {
-          addLog(`正在扫描文件夹...`);
+          const folderName = safePathDisplay(filePath);
+          addLog(`正在扫描文件夹: ${folderName}`);
           // 如果是文件夹，递归查找NCM文件
           const ncmFiles = await invoke("find_ncm_files", { folderPath: filePath });
           allNcmFiles.push(...ncmFiles);
@@ -270,11 +206,12 @@ async function convertFiles(filePaths) {
           if (filePath.toLowerCase().endsWith('.ncm')) {
             allNcmFiles.push(filePath);
           } else {
-            addLog(`跳过非NCM文件`, 'error');
+            const fileName = safePathDisplay(filePath);
+            addLog(`跳过非NCM文件: ${fileName}`, 'error');
           }
         }
       } catch (error) {
-        addLog(`处理文件路径时出错: ${error}`, 'error');
+        addLog(`处理路径失败 ${safePathDisplay(filePath)}: ${error}`, 'error');
       }
     }
     
@@ -287,7 +224,8 @@ async function convertFiles(filePaths) {
     
     // 转换所有找到的NCM文件
     for (let filePath of allNcmFiles) {
-      addLog(`正在转换NCM文件...`);
+      const fileName = safePathDisplay(filePath);
+      addLog(`正在转换: ${fileName}`);
       const result = await invoke("convert_ncm_file", { filePath });
       results.value.push(result);
       
@@ -415,20 +353,19 @@ async function openGithub() {
 
     <div 
       class="drop-zone"
-      :class="{ 'drag-over': isDragOver, 'converting': isConverting }"
-      @drop="handleDrop"
-      @dragover="handleDragOver"
-      @dragleave="handleDragLeave"
+      :class="{ 'drag-over': isDragOver && isMacOS, 'converting': isConverting }"
+      @drop="isMacOS ? handleDrop : null"
+      @dragover="isMacOS ? handleDragOver : null"
+      @dragleave="isMacOS ? handleDragLeave : null"
     >
       <div class="drop-content">
         <div class="drop-icon">📁</div>
-        <p v-if="!isConverting">拖拽NCM文件或文件夹到这里</p>
+        <p v-if="!isConverting">
+          <span v-if="isMacOS">拖拽NCM文件或文件夹到这里</span>
+          <span v-else>选择NCM文件或文件夹进行转换</span>
+        </p>
         <p v-else>正在转换中...</p>
         
-        <!-- Windows拖拽限制提示 -->
-        <div class="windows-notice" v-if="!isConverting">
-          <p class="notice-text">⚠️ Windows用户注意：如果拖拽失败，请使用下方按钮</p>
-        </div>
         
         <div class="button-group" v-if="!isConverting">
           <button @click="selectFiles" class="select-btn">选择文件</button>
@@ -556,24 +493,6 @@ h1 {
   margin-bottom: 1.5rem;
 }
 
-.windows-notice {
-  margin: 1rem 0;
-  padding: 0.75rem;
-  background-color: #fff3cd;
-  border: 1px solid #ffeaa7;
-  border-radius: 6px;
-  max-width: 400px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.notice-text {
-  margin: 0;
-  font-size: 0.9rem;
-  color: #856404;
-  text-align: center;
-  line-height: 1.4;
-}
 
 .button-group {
   display: flex;
@@ -754,15 +673,6 @@ h1 {
   
   .icon-link:hover {
     background-color: rgba(0, 0, 0, 0.3);
-  }
-  
-  .windows-notice {
-    background-color: #2d3748;
-    border-color: #4a5568;
-  }
-  
-  .notice-text {
-    color: #fbd38d;
   }
 }
 </style>

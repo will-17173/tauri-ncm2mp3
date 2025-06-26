@@ -6,27 +6,6 @@ use tauri::Emitter;
 use aes::Aes128;
 use aes::cipher::{BlockDecrypt, KeyInit, generic_array::GenericArray};
 
-// 验证路径是否有效（避免编码错误的路径）
-fn is_valid_path_string(path_str: &str) -> bool {
-    // 检查是否包含替换字符（表示编码错误）
-    if path_str.contains('\u{FFFD}') {
-        return false;
-    }
-    
-    // 检查是否包含明显的乱码模式
-    let invalid_patterns = [
-        "☒", "☐", "맊", "망", "○", "瘟", // 常见的编码错误产生的字符
-    ];
-    
-    for pattern in &invalid_patterns {
-        if path_str.contains(pattern) {
-            return false;
-        }
-    }
-    
-    // 检查路径是否实际存在
-    Path::new(path_str).exists()
-}
 
 // Windows编码处理函数
 fn safe_path_to_string(path: &Path) -> String {
@@ -86,22 +65,12 @@ pub struct ConversionProgress {
 
 #[tauri::command]
 async fn is_directory(path: String) -> Result<bool, String> {
-    // 验证路径字符串是否有效
-    if !is_valid_path_string(&path) {
-        return Err("路径包含无效字符或不存在".to_string());
-    }
-    
     let path = Path::new(&path);
     Ok(path.is_dir())
 }
 
 #[tauri::command]
 async fn find_ncm_files(folder_path: String) -> Result<Vec<String>, String> {
-    // 验证路径字符串是否有效
-    if !is_valid_path_string(&folder_path) {
-        return Err("文件夹路径包含无效字符或不存在".to_string());
-    }
-    
     let path = Path::new(&folder_path);
     let mut ncm_files = Vec::new();
     
@@ -139,15 +108,6 @@ fn collect_ncm_files_recursive(dir: &Path, ncm_files: &mut Vec<PathBuf>) {
 
 #[tauri::command]
 async fn convert_ncm_file(file_path: String) -> Result<ConversionResult, String> {
-    // 验证路径字符串是否有效
-    if !is_valid_path_string(&file_path) {
-        return Ok(ConversionResult {
-            success: false,
-            message: "文件路径包含无效字符或文件不存在".to_string(),
-            output_path: None,
-        });
-    }
-    
     match convert_single_ncm(&file_path).await {
         Ok(output_path) => Ok(ConversionResult {
             success: true,
