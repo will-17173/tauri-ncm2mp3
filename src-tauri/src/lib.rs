@@ -44,7 +44,7 @@ async fn find_ncm_files(folder_path: String) -> Result<Vec<String>, String> {
     
     let file_paths: Vec<String> = ncm_files
         .iter()
-        .filter_map(|p| p.to_str().map(|s| s.to_string()))
+        .map(|p| p.to_string_lossy().to_string())
         .collect();
     
     Ok(file_paths)
@@ -57,7 +57,7 @@ fn collect_ncm_files_recursive(dir: &Path, ncm_files: &mut Vec<PathBuf>) {
             if path.is_dir() {
                 // 递归搜索子文件夹
                 collect_ncm_files_recursive(&path, ncm_files);
-            } else if path.extension().and_then(|s| s.to_str()) == Some("ncm") {
+            } else if path.extension().map(|s| s.to_string_lossy().to_lowercase()) == Some("ncm".to_string()) {
                 ncm_files.push(path);
             }
         }
@@ -95,9 +95,8 @@ async fn convert_ncm_folder(folder_path: String, window: tauri::Window) -> Resul
             total,
             processed: index,
             current_file: file_path.file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("unknown")
-                .to_string(),
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| "unknown".to_string()),
             status: "正在转换".to_string(),
         };
         
@@ -136,7 +135,7 @@ fn collect_ncm_files(dir: &Path, ncm_files: &mut Vec<PathBuf>) {
             let path = entry.path();
             if path.is_dir() {
                 collect_ncm_files(&path, ncm_files);
-            } else if path.extension().and_then(|s| s.to_str()) == Some("ncm") {
+            } else if path.extension().map(|s| s.to_string_lossy().to_lowercase()) == Some("ncm".to_string()) {
                 ncm_files.push(path);
             }
         }
@@ -149,7 +148,7 @@ async fn convert_single_ncm(file_path: &str) -> Result<String> {
         return Err(anyhow!("文件不存在"));
     }
     
-    if path.extension().and_then(|s| s.to_str()) != Some("ncm") {
+    if path.extension().map(|s| s.to_string_lossy().to_lowercase()) != Some("ncm".to_string()) {
         return Err(anyhow!("不是NCM文件"));
     }
     
