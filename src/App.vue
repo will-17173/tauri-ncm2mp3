@@ -129,55 +129,47 @@ onUnmounted(() => {
   }
 });
 
-// 尝试修复编码错误的路径
-function fixPathEncoding(path) {
+// 严格的路径验证函数 - 只允许安全的ASCII路径
+function isValidPath(path) {
   try {
-    // 检查是否包含乱码字符
-    if (typeof path !== 'string' || path.includes('�') || /[\u{FFFD}\u{FFF0}-\u{FFFF}]/u.test(path)) {
-      console.warn('检测到路径编码问题:', path);
-      return null; // 返回null表示路径无法修复
+    if (typeof path !== 'string' || path.length === 0) {
+      return false;
     }
     
-    // 尝试处理可能的UTF-8解码错误
-    // 如果路径看起来像是错误编码的结果，尝试修复
-    try {
-      // 检查是否是因为编码问题导致的奇怪字符
-      const bytes = new TextEncoder().encode(path);
-      const decoded = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-      if (decoded !== path && !decoded.includes('�')) {
-        console.log('尝试修复路径编码:', path, '->', decoded);
-        return decoded;
+    // 检查是否包含乱码字符或替换字符
+    if (path.includes('�') || /[\u{FFFD}\u{FFF0}-\u{FFFF}]/u.test(path)) {
+      console.warn('路径包含乱码字符:', path);
+      return false;
+    }
+    
+    // 检查是否包含明显的编码错误产生的字符
+    const invalidChars = ['☒', '☐', '맊', '망', '○', '瘟', '擦', '霆', '潞', '掘', '昁', '悝', '椆', '恊', '印', '獰', '激', '城', '呂', '鳥'];
+    for (const char of invalidChars) {
+      if (path.includes(char)) {
+        console.warn('路径包含无效字符:', char, 'in', path);
+        return false;
       }
-    } catch (e) {
-      console.warn('路径编码修复失败:', e);
     }
     
-    return path;
+    // 检查是否包含过多的非ASCII字符（可能是编码错误）
+    const nonAsciiCount = (path.match(/[^\x00-\x7F]/g) || []).length;
+    const totalLength = path.length;
+    if (nonAsciiCount > totalLength * 0.3) { // 如果超过30%是非ASCII字符，可能有问题
+      console.warn('路径包含过多非ASCII字符，可能存在编码问题:', path);
+      return false;
+    }
+    
+    return true;
   } catch (error) {
-    console.error('路径编码处理出错:', error);
-    return null;
+    console.error('路径验证出错:', error);
+    return false;
   }
 }
 
 // 安全的路径显示函数，避免乱码
 function safePathDisplay(path) {
-  try {
-    // 首先尝试修复编码
-    const fixedPath = fixPathEncoding(path);
-    if (!fixedPath) {
-      return '[文件名编码错误]';
-    }
-    
-    // 尝试解码可能的乱码路径
-    const fileName = fixedPath.split(/[/\\]/).pop();
-    // 如果文件名包含特殊字符，尝试简化显示
-    if (fileName && (fileName.includes('�') || /[\u{FFFD}\u{FFF0}-\u{FFFF}]/u.test(fileName))) {
-      return '[文件名包含特殊字符]';
-    }
-    return fileName || '[未知文件名]';
-  } catch (error) {
-    return '[文件名解析失败]';
-  }
+  // 直接返回友好提示，不尝试显示可能损坏的路径
+  return '[文件路径编码异常]';
 }
 
 function addLog(message, type = 'info') {
@@ -233,23 +225,25 @@ async function convertFiles(filePaths) {
   
   filePaths.forEach(path => {
     console.log('处理路径:', path, '类型:', typeof path);
-    const fixedPath = fixPathEncoding(path);
-    if (fixedPath) {
-      validPaths.push(fixedPath);
+    if (isValidPath(path)) {
+      validPaths.push(path);
     } else {
       invalidPaths.push(path);
-      addLog(`跳过编码错误的文件: ${safePathDisplay(path)}`, 'error');
+      addLog(`跳过路径编码异常的文件`, 'error');
     }
   });
   
   if (invalidPaths.length > 0) {
-    addLog(`检测到 ${invalidPaths.length} 个文件路径存在编码问题，已跳过`, 'error');
-    addLog('提示：如果文件名包含特殊字符，请尝试重命名文件后再拖拽', 'info');
+    addLog(`检测到 ${invalidPaths.length} 个文件存在路径编码问题，已跳过`, 'error');
+    addLog('⚠️ Windows拖拽编码问题解决方案：', 'info');
+    addLog('1. 将文件移动到英文路径下（如 C:\\temp\\）', 'info');
+    addLog('2. 重命名文件为英文名称', 'info');
+    addLog('3. 或者使用下方"选择文件"按钮', 'info');
   }
   
   if (validPaths.length === 0) {
-    addLog('没有有效的文件路径可以处理', 'error');
-    addLog('建议：请确保文件名不包含特殊字符，或尝试使用"选择文件"按钮', 'info');
+    addLog('❌ 所有拖拽的文件都存在路径编码问题', 'error');
+    addLog('🔧 建议使用"选择文件"或"选择文件夹"按钮，这些功能不受编码问题影响', 'info');
     isConverting.value = false;
     return;
   }
@@ -266,8 +260,7 @@ async function convertFiles(filePaths) {
         const isDirectory = await invoke("is_directory", { path: filePath });
         
         if (isDirectory) {
-          const folderName = safePathDisplay(filePath);
-          addLog(`正在扫描文件夹: ${folderName}`);
+          addLog(`正在扫描文件夹...`);
           // 如果是文件夹，递归查找NCM文件
           const ncmFiles = await invoke("find_ncm_files", { folderPath: filePath });
           allNcmFiles.push(...ncmFiles);
@@ -277,12 +270,11 @@ async function convertFiles(filePaths) {
           if (filePath.toLowerCase().endsWith('.ncm')) {
             allNcmFiles.push(filePath);
           } else {
-            const fileName = safePathDisplay(filePath);
-            addLog(`跳过非NCM文件: ${fileName}`, 'error');
+            addLog(`跳过非NCM文件`, 'error');
           }
         }
       } catch (error) {
-        addLog(`处理路径失败 ${safePathDisplay(filePath)}: ${error}`, 'error');
+        addLog(`处理文件路径时出错: ${error}`, 'error');
       }
     }
     
@@ -295,8 +287,7 @@ async function convertFiles(filePaths) {
     
     // 转换所有找到的NCM文件
     for (let filePath of allNcmFiles) {
-      const fileName = safePathDisplay(filePath);
-      addLog(`正在转换: ${fileName}`);
+      addLog(`正在转换NCM文件...`);
       const result = await invoke("convert_ncm_file", { filePath });
       results.value.push(result);
       
@@ -434,6 +425,11 @@ async function openGithub() {
         <p v-if="!isConverting">拖拽NCM文件或文件夹到这里</p>
         <p v-else>正在转换中...</p>
         
+        <!-- Windows拖拽限制提示 -->
+        <div class="windows-notice" v-if="!isConverting">
+          <p class="notice-text">⚠️ Windows用户注意：如果拖拽失败，请使用下方按钮</p>
+        </div>
+        
         <div class="button-group" v-if="!isConverting">
           <button @click="selectFiles" class="select-btn">选择文件</button>
           <button @click="selectFolder" class="select-btn">选择文件夹</button>
@@ -558,6 +554,25 @@ h1 {
   font-size: 1.2rem;
   color: #4a5568;
   margin-bottom: 1.5rem;
+}
+
+.windows-notice {
+  margin: 1rem 0;
+  padding: 0.75rem;
+  background-color: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 6px;
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.notice-text {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #856404;
+  text-align: center;
+  line-height: 1.4;
 }
 
 .button-group {
@@ -739,6 +754,15 @@ h1 {
   
   .icon-link:hover {
     background-color: rgba(0, 0, 0, 0.3);
+  }
+  
+  .windows-notice {
+    background-color: #2d3748;
+    border-color: #4a5568;
+  }
+  
+  .notice-text {
+    color: #fbd38d;
   }
 }
 </style>
