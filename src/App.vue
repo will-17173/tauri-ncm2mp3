@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { appWindow } from "@tauri-apps/api/window";
 
 const isDragOver = ref(false);
 const isConverting = ref(false);
@@ -16,101 +17,138 @@ const progress = ref({
 });
 const results = ref([]);
 const logs = ref([]);
+const openedFile = ref(null);
 
 let unlistenProgress = null;
 let unlistenFileDrop = null;
+let unlistenFileOpen = null;
 
 onMounted(async () => {
   // 检测操作系统
   isMacOS.value = navigator.platform.toLowerCase().includes('mac');
   
+  // 监听转换进度事件
   unlistenProgress = await listen("conversion-progress", (event) => {
     progress.value = event.payload;
   });
   
+  // 监听文件打开事件（通过右键菜单打开）
+  try {
+    unlistenFileOpen = await appWindow.listen('tauri://file-drop', async (event) => {
+      console.log('文件拖拽事件:', event);
+      if (event.payload.files && event.payload.files.length > 0) {
+        const filePath = event.payload.files[0];
+        await handleFileOpen(filePath);
+      }
+    });
+    
+    // 监听命令行参数打开的文件
+    if (window.__TAURI__) {
+      try {
+        const { getMatches } = await import('@tauri-apps/api/cli');
+        const matches = await getMatches();
+        
+        if (matches.args && matches.args._ && matches.args._.length > 0) {
+          const filePath = matches.args._[0];
+          // 延迟处理，确保UI已加载完成
+          setTimeout(() => {
+            handleFileOpen(filePath);
+          }, 500);
+        }
+      } catch (error) {
+        console.log('获取命令行参数失败:', error);
+      }
+    }
+    
+    addLog("文件打开监听器已初始化", 'info');
+  } catch (error) {
+    console.error("设置文件打开监听失败:", error);
+    addLog(`文件打开功能初始化失败: ${error}`, 'error');
+  }
+  
   // 只在macOS上启用拖拽功能
   if (isMacOS.value) {
     try {
-    // Tauri 2.0 文件拖拽事件监听
-    const window = getCurrentWindow();
-    
-    // 监听文件拖拽事件 - 尝试多种可能的事件名称
-    const dragEvents = [
-      "tauri://file-drop",
-      "tauri://drag-drop", 
-      "file-drop",
-      "drag-drop"
-    ];
-    
-    const hoverEvents = [
-      "tauri://file-drop-hover",
-      "tauri://drag-hover",
-      "file-drop-hover", 
-      "drag-hover"
-    ];
-    
-    const leaveEvents = [
-      "tauri://file-drop-cancelled",
-      "tauri://drag-leave",
-      "file-drop-cancelled",
-      "drag-leave"
-    ];
-    
-    // 尝试监听所有可能的拖拽事件
-    for (const eventName of dragEvents) {
-      try {
-        await window.listen(eventName, (event) => {
-          console.log(`拖拽事件 ${eventName}:`, event);
-          let files = [];
-          
-          if (event.payload) {
-            if (Array.isArray(event.payload)) {
-              files = event.payload;
-            } else if (event.payload.paths) {
-              files = event.payload.paths;
-            } else if (event.payload.files) {
-              files = event.payload.files;
+      // Tauri 2.0 文件拖拽事件监听
+      const window = getCurrentWindow();
+      
+      // 监听文件拖拽事件
+      const dragEvents = [
+        "tauri://file-drop",
+        "tauri://drag-drop", 
+        "file-drop",
+        "drag-drop"
+      ];
+      
+      const hoverEvents = [
+        "tauri://file-drop-hover",
+        "tauri://drag-hover",
+        "file-drop-hover", 
+        "drag-hover"
+      ];
+      
+      const leaveEvents = [
+        "tauri://file-drop-cancelled",
+        "tauri://drag-leave",
+        "file-drop-cancelled",
+        "drag-leave"
+      ];
+      
+      // 尝试监听所有可能的拖拽事件
+      for (const eventName of dragEvents) {
+        try {
+          await window.listen(eventName, (event) => {
+            console.log(`拖拽事件 ${eventName}:`, event);
+            let files = [];
+            
+            if (event.payload) {
+              if (Array.isArray(event.payload)) {
+                files = event.payload;
+              } else if (event.payload.paths) {
+                files = event.payload.paths;
+              } else if (event.payload.files) {
+                files = event.payload.files;
+              }
             }
-          }
-          
-          if (files.length > 0) {
-            addLog(`收到拖拽文件: ${files.length} 个`);
-            convertFiles(files);
-          }
-          isDragOver.value = false;
-        });
-        console.log(`成功监听事件: ${eventName}`);
-      } catch (e) {
-        console.log(`监听事件 ${eventName} 失败:`, e);
+            
+            if (files.length > 0) {
+              addLog(`收到拖拽文件: ${files.length} 个`);
+              convertFiles(files);
+            }
+            isDragOver.value = false;
+          });
+          console.log(`成功监听事件: ${eventName}`);
+        } catch (e) {
+          console.log(`监听事件 ${eventName} 失败:`, e);
+        }
       }
-    }
-    
-    // 监听悬停事件
-    for (const eventName of hoverEvents) {
-      try {
-        await window.listen(eventName, (event) => {
-          console.log(`拖拽悬停事件 ${eventName}:`, event);
-          isDragOver.value = true;
-        });
-      } catch (e) {
-        console.log(`监听悬停事件 ${eventName} 失败:`, e);
+      
+      // 监听悬停事件
+      for (const eventName of hoverEvents) {
+        try {
+          await window.listen(eventName, (event) => {
+            console.log(`拖拽悬停事件 ${eventName}:`, event);
+            isDragOver.value = true;
+          });
+        } catch (e) {
+          console.log(`监听悬停事件 ${eventName} 失败:`, e);
+        }
       }
-    }
-    
-    // 监听离开事件
-    for (const eventName of leaveEvents) {
-      try {
-        await window.listen(eventName, (event) => {
-          console.log(`拖拽离开事件 ${eventName}:`, event);
-          isDragOver.value = false;
-        });
-      } catch (e) {
-        console.log(`监听离开事件 ${eventName} 失败:`, e);
+      
+      // 监听离开事件
+      for (const eventName of leaveEvents) {
+        try {
+          await window.listen(eventName, (event) => {
+            console.log(`拖拽离开事件 ${eventName}:`, event);
+            isDragOver.value = false;
+          });
+        } catch (e) {
+          console.log(`监听离开事件 ${eventName} 失败:`, e);
+        }
       }
-    }
-    
-    // addLog("拖拽功能初始化完成", 'info'); 
-    
+      
+      addLog("拖拽功能初始化完成", 'info'); 
+      
     } catch (error) {
       console.error("设置拖拽监听失败:", error);
       addLog(`拖拽功能初始化失败: ${error}`, 'error');
@@ -127,7 +165,49 @@ onUnmounted(() => {
   if (unlistenFileDrop) {
     unlistenFileDrop();
   }
+  if (unlistenFileOpen) {
+    unlistenFileOpen();
+  }
 });
+
+// 处理通过右键菜单打开的文件
+async function handleFileOpen(filePath) {
+  if (!filePath) return;
+  
+  const fileName = safePathDisplay(filePath);
+  addLog(`通过文件关联打开: ${fileName}`, 'info');
+  openedFile.value = fileName;
+  
+  // 检查文件是否为NCM格式
+  if (!filePath.toLowerCase().endsWith('.ncm')) {
+    addLog(`错误: ${fileName} 不是NCM文件`, 'error');
+    return;
+  }
+  
+  // 转换单个文件
+  try {
+    isConverting.value = true;
+    addLog(`开始转换: ${fileName}`);
+    
+    const result = await invoke("convert_single_file", { filePath });
+    
+    if (result.success) {
+      addLog(`转换成功: ${result.output_path || '输出路径未知'}`, 'success');
+    } else {
+      addLog(`转换失败: ${result.message}`, 'error');
+    }
+    
+    results.value.push(result);
+  } catch (error) {
+    addLog(`转换过程出错: ${error}`, 'error');
+  } finally {
+    isConverting.value = false;
+    // 清空打开的文件信息
+    setTimeout(() => {
+      openedFile.value = null;
+    }, 3000);
+  }
+}
 
 function safePathDisplay(path) {
   try {
@@ -186,23 +266,19 @@ async function convertFiles(filePaths) {
   addLog(`收到文件: ${filePaths.length} 个`);
   
   try {
-    // 先检查哪些是文件，哪些是文件夹
     const allNcmFiles = [];
     
     for (let filePath of filePaths) {
       try {
-        // 检查路径类型
         const isDirectory = await invoke("is_directory", { path: filePath });
         
         if (isDirectory) {
           const folderName = safePathDisplay(filePath);
           addLog(`正在扫描文件夹: ${folderName}`);
-          // 如果是文件夹，递归查找NCM文件
           const ncmFiles = await invoke("find_ncm_files", { folderPath: filePath });
           allNcmFiles.push(...ncmFiles);
           addLog(`在文件夹中找到 ${ncmFiles.length} 个NCM文件`);
         } else {
-          // 如果是文件，检查是否为NCM文件
           if (filePath.toLowerCase().endsWith('.ncm')) {
             allNcmFiles.push(filePath);
           } else {
@@ -222,7 +298,6 @@ async function convertFiles(filePaths) {
     
     addLog(`开始转换 ${allNcmFiles.length} 个NCM文件`);
     
-    // 转换所有找到的NCM文件
     for (let filePath of allNcmFiles) {
       const fileName = safePathDisplay(filePath);
       addLog(`正在转换: ${fileName}`);
@@ -270,19 +345,15 @@ async function handleDrop(e) {
   
   console.log("HTML拖拽事件:", e);
   
-  // 处理HTML5拖拽API
   if (e.dataTransfer && e.dataTransfer.files) {
     const files = Array.from(e.dataTransfer.files);
     console.log("拖拽的文件:", files);
     
-    // 在Tauri中，需要获取文件路径
     const filePaths = [];
     for (const file of files) {
-      // Tauri环境下文件对象应该有path属性
       if (file.path) {
         filePaths.push(file.path);
       } else if (file.name) {
-        // 备用方案：尝试使用文件名
         addLog(`警告: 无法获取文件路径，仅获得文件名: ${file.name}`, 'error');
       }
     }
@@ -314,7 +385,6 @@ function clearLogs() {
 
 async function openWebsite() {
   try {
-    // Tauri 2.0 正确的调用方式
     await invoke('plugin:opener|open_url', { 
       url: 'https://ncm2mp3.xyz/' 
     });
@@ -325,7 +395,6 @@ async function openWebsite() {
 
 async function openGithub() {
   try {
-    // Tauri 2.0 正确的调用方式
     await invoke('plugin:opener|open_url', { 
       url: 'https://github.com/will-17173/tauri-ncm2mp3' 
     });
@@ -351,6 +420,17 @@ async function openGithub() {
     
     <h1>NCM to MP3 转换器</h1>
 
+    <!-- 文件打开提示 -->
+    <div v-if="openedFile" class="file-open-notice">
+      <div class="notice-content">
+        <span class="notice-icon">📂</span>
+        <div class="notice-text">
+          <p>正在处理通过右键菜单打开的文件</p>
+          <p class="file-name">{{ openedFile }}</p>
+        </div>
+      </div>
+    </div>
+
     <div 
       class="drop-zone"
       :class="{ 'drag-over': isDragOver && isMacOS, 'converting': isConverting }"
@@ -363,9 +443,10 @@ async function openGithub() {
         <p v-if="!isConverting">
           <span v-if="isMacOS">拖拽NCM文件或文件夹到这里</span>
           <span v-else>选择NCM文件或文件夹进行转换</span>
+          <br>
+          <small>或通过右键菜单"打开方式"选择此应用</small>
         </p>
         <p v-else>正在转换中...</p>
-        
         
         <div class="button-group" v-if="!isConverting">
           <button @click="selectFiles" class="select-btn">选择文件</button>
@@ -449,6 +530,46 @@ async function openGithub() {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
+/* 文件打开通知样式 */
+.file-open-notice {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 1rem;
+  border-radius: 12px;
+  margin-bottom: 2rem;
+  animation: slideIn 0.5s ease-out;
+}
+
+.notice-content {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.notice-icon {
+  font-size: 2rem;
+}
+
+.notice-text p {
+  margin: 0;
+}
+
+.file-name {
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 h1 {
   text-align: center;
   color: #2c3e50;
@@ -493,6 +614,12 @@ h1 {
   margin-bottom: 1.5rem;
 }
 
+.drop-zone small {
+  font-size: 0.9rem;
+  color: #718096;
+  display: block;
+  margin-top: 0.5rem;
+}
 
 .button-group {
   display: flex;
@@ -621,6 +748,10 @@ h1 {
     color: #f7fafc;
   }
   
+  .file-open-notice {
+    background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+  }
+  
   .drop-zone {
     background-color: #2d3748;
     border-color: #4a5568;
@@ -638,6 +769,10 @@ h1 {
   
   .drop-zone p {
     color: #cbd5e0;
+  }
+  
+  .drop-zone small {
+    color: #a0aec0;
   }
   
   .logs-container {

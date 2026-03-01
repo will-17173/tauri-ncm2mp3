@@ -5,20 +5,16 @@ description = "A Tauri application to convert NCM files to MP3 format"
 authors = ["you"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "ncm2mp3_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# 移除 [lib] 部分，改为 [bin]
+[[bin]]
+name = "ncm2mp3"
+path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["api-all"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
@@ -31,3 +27,14 @@ aes = "0.8"
 hex = "0.4"
 cbc = "0.1"
 
+# 添加必要的依赖
+[dependencies.aes-gcm]
+version = "0.10"
+features = ["aes"]
+
+[dependencies.block-modes]
+version = "0.10"
+
+[dependencies.cipher]
+version = "0.4"
+features = ["std"]

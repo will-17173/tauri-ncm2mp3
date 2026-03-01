@@ -1,0 +1,52 @@
+name: Build Tauri App
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-tauri:
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'pnpm'  # 明确指定使用 pnpm 缓存
+        cache-dependency-path: 'pnpm-lock.yaml'  # 指定锁定文件路径
+        
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: 8
+        
+    - name: Install macOS dependencies
+      run: |
+        brew install pkg-config webkit2gtk
+        
+    - name: Setup Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: stable
+        targets: x86_64-apple-darwin
+        
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile  # 强制使用 pnpm-lock.yaml
+      
+    - name: Build frontend
+      run: pnpm build
+      
+    - name: Build Tauri app
+      run: pnpm tauri build
+      
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ncm2mp3-app
+        path: src-tauri/target/release/bundle/
+        retention-days: 30

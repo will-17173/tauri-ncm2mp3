@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 use aes::Aes128;
 use aes::cipher::{BlockDecrypt, KeyInit, generic_array::GenericArray};
-
+use tauri::{command, Manager};
 
 // Windows编码处理函数
 fn safe_path_to_string(path: &Path) -> String {
@@ -103,6 +103,55 @@ fn collect_ncm_files_recursive(dir: &Path, ncm_files: &mut Vec<PathBuf>) {
                 ncm_files.push(path);
             }
         }
+    }
+}
+
+// 你现有的转换函数
+async fn convert_ncm_to_mp3(file_path: &PathBuf) -> Result<String, String> {
+    match convert_single_ncm(&safe_path_to_string(file_path)).await {
+        Ok(output_path) => Ok(output_path),
+        Err(e) => Err(format!("转换失败: {}", e)),
+    }
+}
+
+#[tauri::command]
+async fn convert_single_file(app_handle: tauri::AppHandle, file_path: String) -> Result<ConversionResult, String> {
+    let path = PathBuf::from(&file_path);
+    
+    // 验证文件是否存在且是 ncm 格式
+    if !path.exists() {
+        return Ok(ConversionResult {
+            success: false,
+            message: "文件不存在".to_string(),
+            output_path: None,
+        });
+    }
+    
+    if path.extension().unwrap_or_default() != "ncm" {
+        return Ok(ConversionResult {
+            success: false,
+            message: "文件不是 NCM 格式".to_string(),
+            output_path: None,
+        });
+    }
+    
+    // 调用你现有的转换逻辑
+    match convert_ncm_to_mp3(&path).await {
+        Ok(output_path) => {
+            // 发送事件到前端通知转换完成
+            let _ = app_handle.emit_all("conversion_complete", &output_path);
+            
+            Ok(ConversionResult {
+                success: true,
+                message: "转换成功".to_string(),
+                output_path: Some(output_path),
+            })
+        }
+        Err(e) => Ok(ConversionResult {
+            success: false,
+            message: e,
+            output_path: None,
+        }),
     }
 }
 
@@ -330,12 +379,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![
-            convert_ncm_file, 
-            convert_ncm_folder, 
-            is_directory, 
-            find_ncm_files
-        ])
+        .invoke_handler(tauri::generate_handler
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

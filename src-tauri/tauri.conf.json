@@ -1,5 +1,5 @@
 {
-  "$schema": "https://schema.tauri.app/config/2",
+  "$schema": "https://schema.tauri.app/config/2.9.2",
   "productName": "ncm2mp3",
   "version": "1.0.2",
   "identifier": "xyz.ncm2mp3.www",
@@ -14,12 +14,35 @@
       {
         "title": "NCM to MP3 转换器",
         "width": 900,
-        "height": 700
+        "height": 700,
+        "resizable": true,
+        "fullscreen": false,
+        "maximizable": true,
+        "minimizable": true,
+        "closable": true,
+        "focus": true,
+        "visible": true,
+        "decorations": true,
+        "alwaysOnTop": false,
+        "center": false
       }
     ],
     "security": {
-      "csp": null
-    }
+      "csp": null,
+      "freezePrototype": false,
+      "dangerousDisableAssetCspModification": false,
+      "assetProtocol": {
+        "enable": false,
+        "scope": []
+      },
+      "pattern": {
+        "use": "brownfield"
+      },
+      "capabilities": []
+    },
+    "withGlobalTauri": false,
+    "enableGTKAppId": false,
+    "macOSPrivateApi": false
   },
   "bundle": {
     "active": true,
@@ -30,6 +53,129 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": [],
+    "externalBin": [],
+    "copyright": null,
+    "category": null,
+    "shortDescription": "NCM to MP3 音频转换器",
+    "longDescription": "一款将网易云音乐 NCM 格式转换为 MP3 格式的桌面应用程序",
+    "fileAssociations": [
+      {
+        "ext": ["ncm"],
+        "name": "NCM Audio File",
+        "description": "网易云音乐加密音频文件",
+        "role": "Editor",
+        "mimeType": "audio/ncm",
+        "rank": "Owner"
+      }
+    ],
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "10.13",
+      "exceptionDomain": null,
+      "signingIdentity": null,
+      "hardenedRuntime": true,
+      "providerShortName": null,
+      "entitlements": null,
+      "bundleVersion": "1.0.2",
+      "bundleName": "ncm2mp3",
+      "files": {},
+      "dmg": {
+        "background": null,
+        "windowPosition": null,
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 180,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 170
+        }
+      }
+    },
+    "windows": {
+      "digestAlgorithm": null,
+      "certificateThumbprint": null,
+      "timestampUrl": null,
+      "tsp": false,
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "allowDowngrades": true,
+      "wix": null,
+      "nsis": null,
+      "signCommand": null
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": false,
+        "files": {}
+      },
+      "deb": {
+        "depends": null,
+        "recommends": null,
+        "provides": null,
+        "conflicts": null,
+        "replaces": null,
+        "files": {},
+        "section": null,
+        "priority": null,
+        "changelog": null,
+        "desktopTemplate": null,
+        "preInstallScript": null,
+        "postInstallScript": null,
+        "preRemoveScript": null,
+        "postRemoveScript": null
+      },
+      "rpm": {
+        "depends": null,
+        "recommends": null,
+        "provides": null,
+        "conflicts": null,
+        "obsoletes": null,
+        "release": "1",
+        "epoch": 0,
+        "files": {},
+        "desktopTemplate": null,
+        "preInstallScript": null,
+        "postInstallScript": null,
+        "preRemoveScript": null,
+        "postRemoveScript": null,
+        "compression": null
+      }
+    },
+    "android": {
+      "minSdkVersion": 24,
+      "versionCode": null,
+      "autoIncrementVersionCode": false
+    },
+    "iOS": {
+      "minimumSystemVersion": "14.0",
+      "template": null,
+      "frameworks": null,
+      "developmentTeam": null,
+      "bundleVersion": null,
+      "infoPlist": null
+    },
+    "createUpdaterArtifacts": false,
+    "useLocalToolsDir": false,
+    "publisher": null,
+    "homepage": null,
+    "license": null,
+    "licenseFile": null
+  },
+  "plugins": {
+    "updater": {
+      "active": false,
+      "endpoints": null,
+      "dialog": true,
+      "pubkey": null
+    }
   }
 }
