@@ -1,12 +1,13 @@
 # NCM to MP3 转换器
 
-一个基于 Tauri + Vue 3 构建的网易云音乐 NCM 格式转 MP3 格式的桌面应用程序。
+一个基于 Tauri + Vue 3 构建的网易云音乐 NCM 音频解密桌面应用程序，按原始编码输出 MP3、FLAC 等格式。
 
 ## ✨ 功能特点
 
 ### 🎵 音频转换
 - **高质量转换**：完整实现网易云音乐 NCM 格式解密算法
-- **保持原始质量**：转换后的 MP3 文件保持原始音质
+- **保持原始质量**：保留原始音频编码和音质，自动识别 MP3、FLAC、Ogg、WAV 和 M4A
+- **兼容封面预留空间**：正确跳过封面图片和填充区，支持实际图片长度为 0 的 NCM 文件
 - **支持批量处理**：可同时转换多个 NCM 文件
 
 ### 📁 智能文件处理
@@ -39,8 +40,9 @@
 3. 应用会自动开始转换过程
 
 ### 转换结果
-- 转换后的 MP3 文件保存在与原 NCM 文件相同的目录下
-- 文件名保持不变，仅扩展名改为 .mp3
+- 解密后的音频文件保存在与原 NCM 文件相同的目录下
+- 文件名保持不变，扩展名根据实际音频格式设置，例如 `.mp3` 或 `.flac`
+- 解密保留原始编码；如需将 FLAC 转成 MP3，需要另外进行音频转码
 - 应用会显示详细的转换日志和结果
 
 ## 📋 系统要求
@@ -75,6 +77,20 @@ pnpm tauri dev
 pnpm tauri build
 ```
 
+### 算法回归测试
+
+```bash
+cd src-tauri
+cargo test
+cargo fmt --check
+```
+
+如需验证本地 NCM 样例，可运行下列可选测试。输出保存在临时目录，不会覆盖原目录中的文件：
+
+```bash
+NCM_SAMPLE_PATH=/path/to/sample.ncm cargo test convert_local_sample -- --ignored --nocapture
+```
+
 ## 📖 项目结构
 
 ```
@@ -84,7 +100,8 @@ ncm2mp3/
 │   └── main.js            # 应用入口
 ├── src-tauri/             # Rust 后端代码
 │   ├── src/
-│   │   ├── lib.rs         # NCM 解密核心逻辑
+│   │   ├── lib.rs         # Tauri 命令、文件扫描和转换输出
+│   │   ├── ncm.rs         # NCM 容器解析、音频解密及格式识别
 │   │   └── main.rs        # 应用主入口
 │   ├── Cargo.toml         # Rust 依赖配置
 │   └── tauri.conf.json    # Tauri 应用配置
